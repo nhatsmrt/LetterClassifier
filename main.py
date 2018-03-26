@@ -40,8 +40,8 @@ y_test_enc = lb.transform(y_test)
 
 
 # Define hyperparameters:
-num_epoch = 10
-batch_size = 16
+num_epoch = 7
+batch_size = 32
 
 
 
@@ -54,3 +54,5 @@ model.fit(X_train, y_train_enc, num_epoch = num_epoch, batch_size = batch_size, 
 predictions = model.predict(X_test)
 accuracy = accuracy(predictions = predictions, y_true_enc = y_test_enc)
 print(accuracy)
+
+

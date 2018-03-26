@@ -10,12 +10,11 @@ import json
 from sklearn.datasets import make_classification
 from sklearn.utils import shuffle
 
-import matplotlib.pyplot as plt
 # Built by Nhat Pham
 
 
 class SimpleConvnet:
-    def __init__(self, inp_w, inp_h, inp_d, n_classes = 26, keep_prob = 0.8, use_gpu = False):
+    def __init__(self, inp_w, inp_h, inp_d, n_classes = 26, keep_prob = 0.5, use_gpu = False):
         self._n_classes = n_classes
         self._keep_prob = keep_prob
         self._use_gpu = use_gpu
@@ -33,35 +32,30 @@ class SimpleConvnet:
         self._X_norm = tf.contrib.layers.batch_norm(self._X, is_training=self._is_training)
 
         # Convolutional layers:
-        self._conv_module1 = self.convolutional_module_with_max_pool(self._X_norm, inp_channel=inp_d,
-                                                                     op_channel=64, name="module1")
-        self._conv_module2 = self.convolutional_module_with_max_pool(self._conv_module1, inp_channel=64,
-                                                                     op_channel=128, name="module2")
+        # self._conv_module1 = self.convolutional_module_with_max_pool(self._X_norm, inp_channel=inp_d,
+        #                                                              op_channel=64, name="module1")
+        # self._conv_module2 = self.convolutional_module_with_max_pool(self._conv_module1, inp_channel=64,
+        #                                                              op_channel=128, name="module2")
 
+        self._conv1 = self.convolutional_layer(self._X_norm, "conv1", inp_channel = 1, op_channel = 64)
+        self._conv2 = self.convolutional_layer(self._conv1, "conv2", inp_channel = 64, op_channel = 128, dropout = True)
+        self._conv2_max_pool = self.max_pool_2x2(self._conv2)  # shape: [batch_size, 14, 14, 128]
 
-        # self._conv_module3 = self.convolutional_module_with_max_pool(self._conv_module2, name = "Final", inp_channel = 128, op_channel = 64)
-        #
-        # self._conv_module3_dropout = tf.nn.dropout(self._conv_module3, keep_prob = self._keep_prob)
-        #
-        # # self._final_conv = self.convolutional_layer(self._conv_module3, name = "final_convolution", inp_channel = 64, op_channel = 26)
-
-
-
-        # self._op = self.global_average_pooling(self._final_conv)
 
         # Flatten:
-        self._conv_module2_dropout = tf.nn.dropout(self._conv_module2, keep_prob = self._keep_prob)
-        self._flat = tf.reshape(self._conv_module2_dropout, [-1, 6272], name = "flat")
-        self._op = self.feed_forward(self._flat, name = "op", inp_channel = 6272, op_channel = 26)
+        self._conv2_flat = tf.reshape(self._conv2_max_pool, shape=[-1, 6272], name = "flat")
 
-        self._op_prob = tf.nn.softmax(self._op, name = "prob")
+        # Feedforward layers:
+        self._fc1 = self.feed_forward(self._conv2_flat, inp_channel = 6272, op_channel = 26, op_layer=True,
+                                      name="fc1")
+        self._op_prob = tf.nn.softmax(self._fc1, name="prob")
 
     def ret_op(self):
         return self._op_prob
 
     def run_model(self, session, predict, loss_val, Xd, yd,
                   epochs=1, batch_size=1, print_every=1,
-                  training=None, plot_losses=False, weight_save_path = None, patience = None):
+                  training=None, plot_losses=False, weight_save_path = None):
         # have tensorflow compute accuracy
         correct_prediction = tf.equal(tf.argmax(self._op_prob, axis = 1), tf.argmax(self._y, axis = 1))
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
@@ -83,8 +77,6 @@ class SimpleConvnet:
 
         # counter
         iter_cnt = 0
-        val_losses = []
-        early_stopping_cnt = 0
         for e in range(epochs):
             # keep track of losses and accuracy
             correct = 0
@@ -96,55 +88,39 @@ class SimpleConvnet:
                 idx = train_indicies[start_idx:start_idx + batch_size]
 
                 # create a feed dictionary for this batch
+                feed_dict = {self._X: Xd[idx, :],
+                             self._y: yd[idx],
+                             self._is_training: training_now}
                 # get batch size
                 actual_batch_size = yd[idx].shape[0]
 
-                if i < int(math.ceil(Xd.shape[0] / batch_size)) - 1:
-                    feed_dict = {self._X: Xd[idx, :],
-                                 self._y: yd[idx],
-                                 self._is_training: training_now}
-                    # have tensorflow compute loss and correct predictions
-                    # and (if given) perform a training step
-                    loss, corr, _ = session.run(variables, feed_dict=feed_dict)
+                # have tensorflow compute loss and correct predictions
+                # and (if given) perform a training step
+                loss, corr, _ = session.run(variables, feed_dict=feed_dict)
 
-                    # aggregate performance stats
-                    losses.append(loss * actual_batch_size)
-                    correct += np.sum(corr)
+                # aggregate performance stats
+                losses.append(loss * actual_batch_size)
+                correct += np.sum(corr)
 
-                    # print every now and then
-                    if training_now and (iter_cnt % print_every) == 0:
-                        print("Iteration {0}: with minibatch training loss = {1:.3g} and accuracy of {2:.2g}" \
-                              .format(iter_cnt, loss, np.sum(corr) / actual_batch_size))
-                else:
-                    feed_dict = {self._X: Xd[idx, :],
-                                 self._y: yd[idx],
-                                 self._is_training: False}
-                    val_loss = session.run(self._mean_loss, feed_dict = feed_dict)
-                    val_losses.append(val_loss)
-                    if training_now and weight_save_path is not None:
-                    # if training_now and val_loss < min(val_losses) and weight_save_path is not None:
-                        save_path = saver.save(session, save_path = weight_save_path)
-                        print("Model's weights saved at %s" % save_path)
-                    if patience is not None:
-                        if val_loss > min(val_losses):
-                            early_stopping_cnt += 1
-                        else:
-                            early_stopping_cnt = 0
-                        if early_stopping_cnt > patience:
-                            print("Patience exceeded. Finish training")
-                            return
+                # print every now and then
+                if training_now and (iter_cnt % print_every) == 0:
+                    print("Iteration {0}: with minibatch training loss = {1:.3g} and accuracy of {2:.2g}" \
+                          .format(iter_cnt, loss, np.sum(corr) / actual_batch_size))
+                if training_now and weight_save_path is not None:
+                    save_path = saver.save(session, save_path = weight_save_path)
+                    print("Model's weights saved at %s" % save_path)
                 iter_cnt += 1
             total_correct = correct / Xd.shape[0]
             total_loss = np.sum(losses) / Xd.shape[0]
             print("Epoch {2}, Overall loss = {0:.3g} and accuracy of {1:.3g}" \
                   .format(total_loss, total_correct, e + 1))
-            if plot_losses:
-                plt.plot(losses)
-                plt.grid(True)
-                plt.title('Epoch {} Loss'.format(e + 1))
-                plt.xlabel('minibatch number')
-                plt.ylabel('minibatch loss')
-                plt.show()
+            # if plot_losses:
+            #     plt.plot(losses)
+            #     plt.grid(True)
+            #     plt.title('Epoch {} Loss'.format(e + 1))
+            #     plt.xlabel('minibatch number')
+            #     plt.ylabel('minibatch loss')
+            #     plt.show()
         return total_loss, total_correct
 
 
@@ -164,31 +140,31 @@ class SimpleConvnet:
             x_padded = tf.pad(x, self.create_pad(4, pad))
         else:
             x_padded = x
-        W_conv = tf.get_variable("W_" + name, shape = [kernel_size, kernel_size, inp_channel, op_channel], initializer = tf.keras.initializers.he_normal())
-        b_conv = tf.get_variable("b_" + name, initializer = tf.zeros(op_channel))
+        W_conv = tf.get_variable("W" + name, shape = [kernel_size, kernel_size, inp_channel, op_channel], initializer = tf.keras.initializers.he_normal())
+        b_conv = tf.get_variable("b" + name, initializer = tf.zeros(op_channel))
         z_conv = tf.nn.conv2d(x_padded, W_conv, strides = [1, strides, strides, 1], padding = padding) + b_conv
         a_conv = tf.nn.relu(z_conv)
-        h_conv = tf.contrib.layers.batch_norm(a_conv, is_training = self._is_training)
+        # h_conv = tf.layers.batch_normalization(a_conv, axis = 1, training = self._is_training)
         if dropout:
             a_conv_dropout = tf.nn.dropout(a_conv, keep_prob = self._keep_prob)
             return a_conv_dropout
         if not_activated:
             return z_conv
-        return h_conv
+        return a_conv
 
     def convolutional_module(self, x, name, inp_channel, op_channel, down_rate = 2):
-        conv1 = self.convolutional_layer(x, name + "_conv1", inp_channel, op_channel)
-        conv2 = self.convolutional_layer(conv1, name + "_conv2", op_channel, op_channel, strides = down_rate)
+        conv1 = self.convolutional_layer(x, name + "conv1", inp_channel, op_channel)
+        conv2 = self.convolutional_layer(conv1, name + "conv2", op_channel, op_channel, strides = down_rate)
         # conv3 = self.convolutional_layer(conv2, name + "conv3", inp_channel, op_channel, dropout = True)
 
-        # batch_norm = tf.contrib.layers.batch_norm(conv2, is_training = self._is_training)
+        batch_norm = tf.contrib.layers.batch_norm(conv2, is_training = self._is_training)
 
-        return conv2
+        return batch_norm
 
     def convolutional_module_with_max_pool(self, x, inp_channel, op_channel, name):
         # conv1 = self.convolutional_layer(x, inp_channel = inp_channel, op_channel = op_channel, name = name + "_conv1")
-        conv1 = self.convolutional_layer(x, inp_channel = inp_channel, op_channel = op_channel, name = name + "_conv1")
-        conv2 = self.convolutional_layer(conv1, inp_channel = op_channel, op_channel = op_channel, name = name + "_conv2")
+        conv1 = self.convolutional_layer(x, inp_channel = inp_channel, op_channel = op_channel, name = name + "_conv1", dropout = True)
+        conv2 = self.convolutional_layer(conv1, inp_channel = op_channel, op_channel = op_channel, name = name + "_conv2", dropout = True)
         conv2_max_pool = self.max_pool_2x2(conv2)
 
         return conv2_max_pool
@@ -225,9 +201,9 @@ class SimpleConvnet:
 
 
     # Train:
-    def fit(self, X, y, num_epoch = 64, batch_size = 16, weight_save_path = None, weight_load_path = None, plot_losses = False):
+    def fit(self, X, y, num_epoch = 64, batch_size = 16, weight_save_path = None, weight_load_path = None):
         self._y = tf.placeholder(tf.float32, shape = [None, self._n_classes])
-        self._mean_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits = self._op, labels = self._y))
+        self._mean_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits = self._fc1, labels = self._y))
         self._optimizer = tf.train.AdamOptimizer(1e-4)
         extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(extra_update_ops):
@@ -241,7 +217,7 @@ class SimpleConvnet:
             self._sess.run(tf.global_variables_initializer())
         if num_epoch > 0:
             print('Training Characters Classifier for ' + str(num_epoch) +  ' epochs')
-            self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, num_epoch, batch_size, 1, self._train_step, weight_save_path = weight_save_path, plot_losses = plot_losses)
+            self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, num_epoch, batch_size, 1, self._train_step, weight_save_path = weight_save_path)
 
 
 
