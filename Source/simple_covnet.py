@@ -35,9 +35,11 @@ class SimpleConvnet:
 
         # Convolutional layers:
         self._conv_module1 = self.convolutional_module_with_max_pool(self._X_norm, inp_channel=inp_d,
-                                                                     op_channel=64, name="module1")
+                                                                     op_channel = 64, name="module1")
         self._conv_module2 = self.convolutional_module_with_max_pool(self._conv_module1, inp_channel=64,
-                                                                     op_channel=128, name="module2")
+                                                                     op_channel = 128, name="module2")
+
+        # self._inception_module = self.inception_module(self._conv_module2, inp_channel = 128, name = "inception", op_channel = 192)
 
         # Residual modules:
         self._res_module1 = self.residual_module(self._conv_module2, name = "residual_module_1", inp_channel = 128)
@@ -225,16 +227,16 @@ class SimpleConvnet:
         return batch_norm
 
     def inception_module(self, x, name, inp_channel, op_channel):
-        tower1_conv1 = self.convolutional_layer(x, kernel_size = 1, padding = 'SAME', inp_channel = inp_channel, op_channel = op_channel, name = name + "_tower1_conv1")
-        tower1_conv2 = self.convolutional_layer(tower1_conv1, kernel_size = 3, padding = 'SAME', inp_channel = op_channel, op_channel = op_channel, name = name + "_tower1_conv2")
+        tower1_conv1 = self.convolutional_layer(x, kernel_size = 1, padding = 'SAME', inp_channel = inp_channel, op_channel = op_channel // 3, name = name + "_tower1_conv1", pad = 0)
+        tower1_conv2 = self.convolutional_layer(tower1_conv1, kernel_size = 3, padding = 'SAME', inp_channel = op_channel // 3, op_channel = op_channel // 3, name = name + "_tower1_conv2", pad = 0)
 
-        tower2_conv1 = self.convolutional_layer(x, kernel_size = 1, padding = 'SAME', inp_channel = inp_channel, op_channel = op_channel, name = name + "_tower2_conv1")
-        tower2_conv2 = self.convolutional_layer(tower2_conv1, kernel_size = 5, padding = 'SAME', inp_channel = op_channel, op_channel = op_channel, name = name + "_tower2_conv2")
+        tower2_conv1 = self.convolutional_layer(x, kernel_size = 1, padding = 'SAME', inp_channel = inp_channel, op_channel = op_channel // 3, name = name + "_tower2_conv1", pad = 0)
+        tower2_conv2 = self.convolutional_layer(tower2_conv1, kernel_size = 5, padding = 'SAME', inp_channel = op_channel // 3, op_channel = op_channel // 3, name = name + "_tower2_conv2", pad = 0)
 
         tower3_max_pool = tf.nn.max_pool(x, ksize = [1, 3, 3, 1], strides = [1, 1, 1, 1], padding = 'SAME')
-        tower3_conv = self.convolutional_layer(tower3_max_pool, name = name + "_tower3_conv", inp_channel = inp_channel, op_channel = op_channel, kernel_size = 1)
+        tower3_conv = self.convolutional_layer(tower3_max_pool, name = name + "_tower3_conv", inp_channel = inp_channel, op_channel = op_channel // 3, kernel_size = 1, pad = 0)
 
-        return tf.concat([tower1_conv2, tower2_conv2, tower3_conv], axis = 1)
+        return tf.concat([tower1_conv2, tower2_conv2, tower3_conv], axis = -1)
 
 
 
