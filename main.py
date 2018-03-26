@@ -40,7 +40,7 @@ y_test_enc = lb.transform(y_test)
 
 
 # Define hyperparameters:
-num_epoch = 7
+num_epoch = 15
 batch_size = 32
 
 
