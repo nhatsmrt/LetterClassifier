@@ -40,7 +40,7 @@ y_test_enc = lb.transform(y_test)
 
 
 # Define hyperparameters:
-num_epoch = 0
+num_epoch = 10
 batch_size = 16
 
 
@@ -48,7 +48,7 @@ batch_size = 16
 
 # Define model:
 model = SimpleConvnet(inp_w = 28, inp_h = 28, inp_d = 1)
-model.fit(X_train, y_train_enc, num_epoch = num_epoch, batch_size = batch_size, weight_load_path = weight_load_path)
+model.fit(X_train, y_train_enc, num_epoch = num_epoch, batch_size = batch_size, weight_save_path = weight_save_path)
 
 # Test model:
 predictions = model.predict(X_test)

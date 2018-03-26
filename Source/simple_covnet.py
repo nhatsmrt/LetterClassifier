@@ -32,21 +32,21 @@ class SimpleConvnet:
         self._X_norm = tf.contrib.layers.batch_norm(self._X, is_training=self._is_training)
 
         # Convolutional layers:
-        # self._conv_module1 = self.convolutional_module_with_max_pool(self._X_norm, inp_channel=inp_d,
-        #                                                              op_channel=64, name="module1")
-        # self._conv_module2 = self.convolutional_module_with_max_pool(self._conv_module1, inp_channel=64,
-        #                                                              op_channel=128, name="module2")
+        self._conv_module1 = self.convolutional_module_with_max_pool(self._X_norm, inp_channel=inp_d,
+                                                                     op_channel=64, name="module1")
+        self._conv_module2 = self.convolutional_module_with_max_pool(self._conv_module1, inp_channel=64,
+                                                                     op_channel=128, name="module2")
 
-        self._conv1 = self.convolutional_layer(self._X_norm, "conv1", inp_channel = 1, op_channel = 64)
-        self._conv2 = self.convolutional_layer(self._conv1, "conv2", inp_channel = 64, op_channel = 128, dropout = True)
-        self._conv2_max_pool = self.max_pool_2x2(self._conv2)  # shape: [batch_size, 14, 14, 128]
+        # self._conv1 = self.convolutional_layer(self._X_norm, "conv1", inp_channel = 1, op_channel = 64)
+        # self._conv2 = self.convolutional_layer(self._conv1, "conv2", inp_channel = 64, op_channel = 128, dropout = True)
+        # self._conv2_max_pool = self.max_pool_2x2(self._conv2)  # shape: [batch_size, 14, 14, 128]
 
 
         # Flatten:
-        self._conv2_flat = tf.reshape(self._conv2_max_pool, shape=[-1, 25088], name="flat")
+        self._conv2_flat = tf.reshape(self._conv_module2, shape=[-1, 6272], name="flat")
 
         # Feedforward layers:
-        self._fc1 = self.feed_forward(self._conv2_flat, inp_channel = 25088, op_channel=26, op_layer=True,
+        self._fc1 = self.feed_forward(self._conv2_flat, inp_channel = 6272, op_channel = 26, op_layer=True,
                                       name="fc1")
         self._op_prob = tf.nn.softmax(self._fc1, name="prob")
 
@@ -210,8 +210,8 @@ class SimpleConvnet:
             print("Weight loaded successfully")
         else:
             self._sess.run(tf.global_variables_initializer())
-        print('Training Characters Classifier for 10 epochs' )
         if num_epoch > 0:
+            print('Training Characters Classifier for ' + str(num_epoch) +  ' epochs')
             self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, num_epoch, batch_size, 1, self._train_step, weight_save_path = weight_save_path)
 
 
