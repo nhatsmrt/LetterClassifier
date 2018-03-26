@@ -11,11 +11,13 @@ from sklearn.preprocessing import LabelBinarizer
 
 # Define paths:
 d = Path().resolve()
-# source_path = str(d) + "/Source/"
 data_path = str(d) + "/Data"
 train_path = data_path + "/train.csv"
 predictions_path = "/output/"
 sample_path = data_path + "/sample_submission.csv"
+weight_save_path = str(d) + "/weights/model.ckpt"
+weight_load_path = weight_save_path
+
 
 # Prepare data:
 df_train = pd.read_csv(data_path + "/emnist-letters-train.csv")
@@ -38,7 +40,7 @@ y_test_enc = lb.transform(y_test)
 
 
 # Define hyperparameters:
-num_epoch = 1
+num_epoch = 0
 batch_size = 16
 
 
@@ -46,9 +48,9 @@ batch_size = 16
 
 # Define model:
 model = SimpleConvnet(inp_w = 28, inp_h = 28, inp_d = 1)
-model.fit(X_train, y_train_enc, num_epoch = num_epoch, batch_size = batch_size)
+model.fit(X_train, y_train_enc, num_epoch = num_epoch, batch_size = batch_size, weight_load_path = weight_load_path)
 
 # Test model:
 predictions = model.predict(X_test)
-correct_prediction = accuracy(predictions, y_test_enc)
-accuracy = np.mean(np.cast(correct_prediction, np.float32) ,axis = -1)
+accuracy = accuracy(predictions = predictions, y_true_enc = y_test_enc)
+print(accuracy)

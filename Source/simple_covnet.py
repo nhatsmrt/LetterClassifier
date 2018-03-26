@@ -14,37 +14,54 @@ from sklearn.utils import shuffle
 
 
 class SimpleConvnet:
-    def __init__(self, inp_w, inp_h, inp_d, n_classes = 26, keep_prob = 0.5):
-        with tf.device('/device:CPU:0'):
-            self._is_training = tf.placeholder(tf.bool)
-            self._n_classes = n_classes
-            self._X = tf.placeholder(shape = [None, inp_w, inp_h, inp_d], dtype = tf.float32)
-            self._keep_prob = keep_prob
-            self._X_norm = tf.contrib.layers.batch_norm(self._X, is_training = self._is_training)
-
-            # Convolutional layers:
-            self._conv1 = self.convolutional_layer(self._X_norm, "conv1", inp_channel = 1, op_channel = 64)
-            self._conv2 = self.convolutional_layer(self._conv1, "conv2", inp_channel = 64, op_channel = 128, dropout = True)
-            self._conv2_max_pool = self.max_pool_2x2(self._conv2) # shape: [batch_size, 14, 14, 128]
+    def __init__(self, inp_w, inp_h, inp_d, n_classes = 26, keep_prob = 0.5, use_gpu = False):
+        self._n_classes = n_classes
+        self._keep_prob = keep_prob
+        self._use_gpu = use_gpu
+        if use_gpu:
+            with tf.device('/device:GPU:0'):
+                self.create_network(inp_w, inp_h, inp_d)
+        else:
+            with tf.device('/device:CPU:0'):
+                self.create_network(inp_w, inp_h, inp_d)
 
 
-            # Flatten:
-            self._conv2_flat = tf.reshape(self._conv2_max_pool, shape = [-1, 25088], name = "flat")
+    def create_network(self, inp_w, inp_h, inp_d):
+        self._is_training = tf.placeholder(tf.bool)
+        self._X = tf.placeholder(shape=[None, inp_w, inp_h, inp_d], dtype=tf.float32)
+        self._X_norm = tf.contrib.layers.batch_norm(self._X, is_training=self._is_training)
 
-            # Feedforward layers:
-            self._fc1 = self.feed_forward(self._conv2_flat, inp_channel = 25088, op_channel = 26, op_layer = True, name = "fc1")
-            self._op_prob = tf.nn.softmax(self._fc1)
+        # Convolutional layers:
+        # self._conv_module1 = self.convolutional_module_with_max_pool(self._X_norm, inp_channel=inp_d,
+        #                                                              op_channel=64, name="module1")
+        # self._conv_module2 = self.convolutional_module_with_max_pool(self._conv_module1, inp_channel=64,
+        #                                                              op_channel=128, name="module2")
 
+        self._conv1 = self.convolutional_layer(self._X_norm, "conv1", inp_channel = 1, op_channel = 64)
+        self._conv2 = self.convolutional_layer(self._conv1, "conv2", inp_channel = 64, op_channel = 128, dropout = True)
+        self._conv2_max_pool = self.max_pool_2x2(self._conv2)  # shape: [batch_size, 14, 14, 128]
+
+
+        # Flatten:
+        self._conv2_flat = tf.reshape(self._conv2_max_pool, shape=[-1, 25088], name="flat")
+
+        # Feedforward layers:
+        self._fc1 = self.feed_forward(self._conv2_flat, inp_channel = 25088, op_channel=26, op_layer=True,
+                                      name="fc1")
+        self._op_prob = tf.nn.softmax(self._fc1, name="prob")
 
     def ret_op(self):
         return self._op_prob
 
     def run_model(self, session, predict, loss_val, Xd, yd,
                   epochs=1, batch_size=1, print_every=1,
-                  training=None, plot_losses=False):
+                  training=None, plot_losses=False, weight_save_path = None):
         # have tensorflow compute accuracy
         correct_prediction = tf.equal(tf.argmax(self._op_prob, axis = 1), tf.argmax(self._y, axis = 1))
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+        # Define saver:
+        saver = tf.train.Saver()
 
         # shuffle indicies
         train_indicies = np.arange(Xd.shape[0])
@@ -89,6 +106,9 @@ class SimpleConvnet:
                 if training_now and (iter_cnt % print_every) == 0:
                     print("Iteration {0}: with minibatch training loss = {1:.3g} and accuracy of {2:.2g}" \
                           .format(iter_cnt, loss, np.sum(corr) / actual_batch_size))
+                if training_now and weight_save_path is not None:
+                    save_path = saver.save(session, save_path = weight_save_path)
+                    print("Model's weights saved at %s" % save_path)
                 iter_cnt += 1
             total_correct = correct / Xd.shape[0]
             total_loss = np.sum(losses) / Xd.shape[0]
@@ -141,6 +161,14 @@ class SimpleConvnet:
 
         return batch_norm
 
+    def convolutional_module_with_max_pool(self, x, inp_channel, op_channel, name):
+        conv1 = self.convolutional_layer(x, inp_channel = inp_channel, op_channel = op_channel, name = name + "_conv1")
+        conv2 = self.convolutional_layer(conv1, inp_channel = op_channel, op_channel = op_channel, name = name + "_conv2", dropout = True)
+        conv2_max_pool = self.max_pool_2x2(conv2)
+
+        return conv2_max_pool
+
+
     def residual_module(self, x, name, inp_channel):
         conv1 = self.convolutional_layer(x, name + "conv1", inp_channel, inp_channel)
         conv2 = self.convolutional_layer(conv1, name + "conv2", inp_channel, inp_channel, not_activated = True)
@@ -168,7 +196,7 @@ class SimpleConvnet:
         return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
     # Train:
-    def fit(self, X, y, num_epoch = 64, batch_size = 16):
+    def fit(self, X, y, num_epoch = 64, batch_size = 16, weight_save_path = None, weight_load_path = None):
         self._y = tf.placeholder(tf.float32, shape = [None, self._n_classes])
         self._mean_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits = self._fc1, labels = self._y))
         self._optimizer = tf.train.AdamOptimizer(1e-4)
@@ -176,9 +204,15 @@ class SimpleConvnet:
         with tf.control_dependencies(extra_update_ops):
             self._train_step = self._optimizer.minimize(self._mean_loss)
         self._sess = tf.Session()
-        self._sess.run(tf.global_variables_initializer())
-        print('Training Digits Classifier for 10 epochs' )
-        self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, num_epoch, batch_size, 1, self._train_step)
+        if weight_load_path is not None:
+            loader = tf.train.Saver()
+            loader.restore(sess = self._sess, save_path = weight_load_path)
+            print("Weight loaded successfully")
+        else:
+            self._sess.run(tf.global_variables_initializer())
+        print('Training Characters Classifier for 10 epochs' )
+        if num_epoch > 0:
+            self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, num_epoch, batch_size, 1, self._train_step, weight_save_path = weight_save_path)
 
 
 
