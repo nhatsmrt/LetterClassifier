@@ -11,10 +11,10 @@ from sklearn.datasets import make_classification
 from sklearn.utils import shuffle
 
 import matplotlib.pyplot as plt
+
 # Built by Nhat Hoang Pham
 
-
-class SimpleConvnet:
+class FancierCovnet:
     def __init__(self, inp_w, inp_h, inp_d, n_classes = 26, keep_prob = 0.8, use_gpu = False):
         self._n_classes = n_classes
         self._keep_prob = keep_prob
@@ -34,35 +34,28 @@ class SimpleConvnet:
         # self._X_norm = tf.contrib.layers.batch_norm(self._X, is_training=self._is_training)
         self._X_norm = tf.layers.batch_normalization(self._X, training = self._is_training)
 
-        # Convolutional layers:
-        self._conv_module1 = self.convolutional_module_with_max_pool(self._X_norm, inp_channel=inp_d,
-                                                                     op_channel = 64, name="module1")
-        self._conv_module2 = self.convolutional_module_with_max_pool(self._conv_module1, inp_channel=64,
-                                                                     op_channel = 128, name="module2")
-
-        # self._inception_module = self.inception_module(self._conv_module2, inp_channel = 128, name = "inception", op_channel = 192)
-
-        # Residual modules:
-        self._res_module1 = self.residual_module(self._conv_module2, name = "residual_module_1", inp_channel = 128)
-        self._res_module2 = self.residual_module(self._res_module1, name = "residual_module_2", inp_channel = 128)
+        # Convolutional and max-pool:
+        self._convolution_layer1 = self.convolutional_layer(self._X_norm, kernel_size = 7, inp_channel = inp_d, op_channel = 64, name = "conv_layer1", strides = 2, padding = 'SAME')
+        self._convolution_layer1_max_pool = tf.nn.max_pool(self._convolution_layer1, ksize = [1, 3, 3, 1], strides = [1, 2, 2, 1], padding = 'SAME')
 
 
+        # Residual Modules:
+        self._res_module1 = self.residual_module(self._convolution_layer1_max_pool, inp_channel = 64, name = "res_module1")
+        self._res_module2 = self.residual_module(self._res_module1, inp_channel = 64, name = "res_module2")
 
-        # self._conv_module3 = self.convolutional_module_with_max_pool(self._conv_module2, name = "Final", inp_channel = 128, op_channel = 64)
-        #
-        # self._conv_module3_dropout = tf.nn.dropout(self._conv_module3, keep_prob = self._keep_prob)
-        #
-        # # self._final_conv = self.convolutional_layer(self._conv_module3, name = "final_convolution", inp_channel = 64, op_channel = 26)
+        self._convolution_layer2 = self.convolutional_layer(self._res_module2, kernel_size = 7, inp_channel = 64, op_channel = 128, name = "conv_layer2", strides = 2, padding = 'SAME')
+        self._convolution_layer2_max_pool = tf.nn.max_pool(self._convolution_layer2, ksize = [1, 3, 3, 1], strides = [1, 2, 2, 1], padding = 'SAME')
+
+        self._res_module3 = self.residual_module(self._convolution_layer2_max_pool, inp_channel = 128, name = "res_module3")
+        self._res_module4 = self.residual_module(self._res_module3, inp_channel = 128, name = "res_module4")
 
 
-
-        # self._op = self.global_average_pooling(self._final_conv)
 
         # Flatten:
         # self._conv_module2_dropout = tf.nn.dropout(self._conv_module2, keep_prob = self._keep_prob)
-        self._flat = tf.reshape(self._res_module2, [-1, 6272], name = "flat")
+        self._flat = tf.reshape(self._res_module4, [-1, 1152], name = "flat")
         # self._op = self.feed_forward(self._flat, name = "op", inp_channel = 6272, op_channel = 26)
-        self._fc1 = self.feed_forward(self._flat, name = "op", inp_channel = 6272, op_channel = 26)
+        self._fc1 = self.feed_forward(self._flat, name = "op", inp_channel = 1152, op_channel = 26, op_layer = True)
         self._op = tf.nn.dropout(self._fc1, keep_prob = self._keep_prob_tensor)
 
         self._op_prob = tf.nn.softmax(self._op, name = "prob")
@@ -70,7 +63,7 @@ class SimpleConvnet:
     def ret_op(self):
         return self._op_prob
 
-# Adapt from Stanford's CS231n Assignment 3
+# Adapt from Stanford's CS231n Assignment3
     def run_model(self, session, predict, loss_val, Xd, yd,
                   epochs=1, batch_size=1, print_every=1,
                   training=None, plot_losses=False, weight_save_path = None, patience = None):
@@ -228,7 +221,7 @@ class SimpleConvnet:
         # conv3 = self.convolutional_layer(conv2, name + "conv3", inp_channel, op_channel, dropout = True)
         res_layer = tf.nn.relu(tf.add(conv2, x, name = "res"))
 
-        batch_norm = tf.contrib.layers.batch_norm(res_layer, is_training = self._is_training)
+        batch_norm = tf.layers.batch_normalization(res_layer, training = self._is_training)
 
         return batch_norm
 
@@ -244,12 +237,6 @@ class SimpleConvnet:
 
         return tf.concat([tower1_conv2, tower2_conv2, tower3_conv], axis = -1)
 
-    def hypercolumn(self, layers_list, input_dim):
-        layers_list_upsampled = []
-        for layer in layers_list:
-            layers_list_upsampled.append(tf.image.resize_bilinear(images = layer, size = (input_dim, input_dim)))
-        return tf.concat(layers_list, axis = 0)
-
 
 
     def feed_forward(self, x, name, inp_channel, op_channel, op_layer = False):
@@ -259,7 +246,7 @@ class SimpleConvnet:
         if op_layer:
             # a = tf.nn.sigmoid(z)
             # return a
-            return z
+            return tf.layers.batch_normalization(z, training = self._is_training)
         else:
             a = tf.nn.relu(z)
             a_norm = tf.layers.batch_normalization(a, training = self._is_training)
