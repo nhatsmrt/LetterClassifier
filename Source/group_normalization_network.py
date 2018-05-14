@@ -164,11 +164,8 @@ class FourthModel:
 
     # Predict:
     def predict(self, X):
-        with tf.Session() as sess:
-            with tf.device("/cpu:0"):
-                tf.global_variables_initializer().run()
-                ans = sess.run(self._op_prob, feed_dict = {self._X : X, self._is_training : False, self._keep_prob_tensor : 1.0})
-                return ans
+        ans = self._sess.run(self._op_prob, feed_dict = {self._X : X, self._is_training : False, self._keep_prob_tensor : 1.0})
+        return ans
 
     # Define layers and modules:
     def convolutional_layer(self, x, name, inp_channel, op_channel, kernel_size = 3, strides = 1, padding = 'VALID', pad = 1, dropout = False, not_activated = False):
@@ -218,13 +215,14 @@ class FourthModel:
 
     def residual_module(self, x, name, inp_channel):
         conv1 = self.convolutional_layer(x, name + "_conv1", inp_channel, inp_channel)
-        conv2 = self.convolutional_layer(conv1, name + "_conv2", inp_channel, inp_channel, not_activated = True)
-        # conv3 = self.convolutional_layer(conv2, name + "conv3", inp_channel, op_channel, dropout = True)
-        res_layer = tf.nn.relu(tf.add(conv2, x, name = "res"))
+        batch_norm_1 = self.group_normalization(conv1, inp_channel= inp_channel, name = name + "_batch_norm_1", G = 32)
+        z_1 = tf.nn.relu(batch_norm_1)
+        conv2 = self.convolutional_layer(z_1, name + "_conv2", inp_channel, inp_channel, not_activated = True)
+        batch_norm_2 = self.group_normalization(conv2, inp_channel = inp_channel, name = name + "_batch_norm_2", G = 32)
+        res_layer = tf.nn.relu(tf.add(batch_norm_2, x, name = name + "res"))
 
-        res_layer_norm = self.group_normalization(res_layer, name = name + "_norm", inp_channel = inp_channel, G = 32)
 
-        return res_layer_norm
+        return res_layer
 
     def inception_module(self, x, name, inp_channel, op_channel):
         tower1_conv1 = self.convolutional_layer(x, kernel_size = 1, padding = 'SAME', inp_channel = inp_channel, op_channel = op_channel // 3, name = name + "_tower1_conv1", pad = 0)

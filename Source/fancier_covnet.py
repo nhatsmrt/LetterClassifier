@@ -163,11 +163,8 @@ class FancierCovnet:
 
     # Predict:
     def predict(self, X):
-        with tf.Session() as sess:
-            with tf.device("/cpu:0"):
-                tf.global_variables_initializer().run()
-                ans = sess.run(self._op_prob, feed_dict = {self._X : X, self._is_training : False, self._keep_prob_tensor : 1.0})
-                return ans
+        ans = self._sess.run(self._op_prob, feed_dict = {self._X : X, self._is_training : False, self._keep_prob_tensor : 1.0})
+        return ans
 
     # Define layers and modules:
     def convolutional_layer(self, x, name, inp_channel, op_channel, kernel_size = 3, strides = 1, padding = 'VALID', pad = 1, dropout = False, not_activated = False):

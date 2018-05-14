@@ -12,9 +12,31 @@ from sklearn.utils import shuffle
 
 import matplotlib.pyplot as plt
 
-# Built by Nhat Hoang Pham
+class SimpleAveragingEnsembler:
 
-class SENet:
+    def __init__(self, n_models, weights_list, inp_w, inp_h, inp_d, n_classes = 26):
+        self._inp_w = inp_w
+        self._inp_h = inp_h
+        self._inp_d = inp_d
+        self._n_classes = n_classes
+        self._n_models = n_models
+        self._weights_list = weights_list
+
+    def predict(self, X_test):
+        predictions_list = []
+        X_train_dummy = np.zeros(shape = [1, self._inp_w, self._inp_h, self._inp_d])
+        X_train_dummy = np.zeros(shape = [1, self._n_classes])
+        for i in range(self._n_models):
+            tf.reset_default_graph()
+            model = DeeperNet(self._inp_w, self._inp_h, self._inp_d, self._n_classes)
+            model.fit(X_train_dummy, X_train_dummy, num_epoch= 0, batch_size = 16,
+                       weight_load_path = self._weights_list[i])
+            predictions_list.append(model.predict(X_test))
+        predictions_list = np.array(predictions_list)
+        return np.mean(predictions_list, axis = 0)
+
+
+class DeeperNet:
     def __init__(self, inp_w, inp_h, inp_d, n_classes = 26, keep_prob = 0.8, use_gpu = False):
         self._n_classes = n_classes
         self._keep_prob = keep_prob
@@ -31,8 +53,9 @@ class SENet:
         self._keep_prob_tensor = tf.placeholder(tf.float32)
         self._is_training = tf.placeholder(tf.bool)
         self._X = tf.placeholder(shape=[None, inp_w, inp_h, inp_d], dtype=tf.float32)
-        # self._X_norm = tf.contrib.layers.batch_norm(self._X, is_training=self._is_training)
-        self._X_norm = tf.layers.batch_normalization(self._X, training = self._is_training)
+        # self._X_norm = tf.layers.batch_normalization(self._X, training = self._is_training)
+        self._X_norm = self.group_normalization(self._X, name = "X_norm", G = 1, inp_channel = inp_d)
+
 
         # Convolutional and max-pool:
         self._convolution_layer1 = self.convolutional_layer(self._X_norm, kernel_size = 7, inp_channel = inp_d, op_channel = 64, name = "conv_layer1", strides = 2, padding = 'SAME')
@@ -49,13 +72,19 @@ class SENet:
         self._res_module3 = self.residual_module_with_se(self._convolution_layer2_max_pool, inp_channel = 128, name = "res_module3")
         self._res_module4 = self.residual_module_with_se(self._res_module3, inp_channel = 128, name = "res_module4")
 
+        self._convolution_layer3 = self.convolutional_layer(self._res_module4, kernel_size = 7, inp_channel = 128, op_channel = 256, name = "conv_layer3", strides = 2, padding = 'SAME')
+        self._convolution_layer3_max_pool = tf.nn.max_pool(self._convolution_layer3, ksize = [1, 3, 3, 1], strides = [1, 2, 2, 1], padding = 'SAME')
+
+        self._res_module5 = self.residual_module_with_se(self._convolution_layer3_max_pool, inp_channel = 256, name = "res_module5")
+        self._res_module6 = self.residual_module_with_se(self._res_module5, inp_channel = 256, name = "res_module6")
+
 
 
         # Flatten:
         # self._conv_module2_dropout = tf.nn.dropout(self._conv_module2, keep_prob = self._keep_prob)
-        self._flat = tf.reshape(self._res_module4, [-1, 1152], name = "flat")
+        self._flat = tf.reshape(self._res_module6, [-1, 1024], name = "flat")
         # self._op = self.feed_forward(self._flat, name = "op", inp_channel = 6272, op_channel = 26)
-        self._fc1 = self.feed_forward(self._flat, name = "fc1", inp_channel = 1152, op_channel = 100)
+        self._fc1 = self.feed_forward(self._flat, name = "fc1", inp_channel = 1024, op_channel = 100)
         self._fc2 = self.feed_forward(self._fc1, inp_channel = 100, op_channel = 26, name = "fc2", op_layer = True)
         self._op = tf.nn.dropout(self._fc2, keep_prob = self._keep_prob_tensor)
 
@@ -177,7 +206,8 @@ class SENet:
         b_conv = tf.get_variable("b_" + name, initializer = tf.zeros(op_channel))
         z_conv = tf.nn.conv2d(x_padded, W_conv, strides = [1, strides, strides, 1], padding = padding) + b_conv
         a_conv = tf.nn.relu(z_conv)
-        h_conv = tf.layers.batch_normalization(a_conv, training = self._is_training)
+        # h_conv = tf.layers.batch_normalization(a_conv, training = self._is_training)
+        h_conv = self.group_normalization(a_conv, name = name + "_norm", inp_channel = op_channel, G = 32)
         if dropout:
             a_conv_dropout = tf.nn.dropout(a_conv, keep_prob = self._keep_prob)
             return a_conv_dropout
@@ -215,10 +245,11 @@ class SENet:
 
     def residual_module(self, x, name, inp_channel):
         conv1 = self.convolutional_layer(x, name + "_conv1", inp_channel, inp_channel)
-        batch_norm_1 = tf.layers.batch_normalization(conv1, training = self._is_training)
+        # batch_norm_1 = tf.layers.batch_normalization(conv1, training = self._is_training)
+        batch_norm_1 = self.group_normalization(conv1, inp_channel= inp_channel, name = name + "_batch_norm_1", G = 32)
         z_1 = tf.nn.relu(batch_norm_1)
         conv2 = self.convolutional_layer(z_1, name + "_conv2", inp_channel, inp_channel, not_activated = True)
-        batch_norm_2 = tf.layers.batch_normalization(conv2, training = self._is_training)
+        batch_norm_2 = self.group_normalization(conv2, inp_channel = inp_channel, name = name + "_batch_norm_2", G = 32)
         res_layer = tf.nn.relu(tf.add(batch_norm_2, x, name = name + "res"))
 
 
@@ -288,6 +319,19 @@ class SENet:
         x_excited_broadcasted = tf.reshape(x_excited, shape = [x_shape[0], 1, 1, x_shape[-1]])
         return tf.multiply(x, x_excited_broadcasted)
 
+    def group_normalization(self, x, name, inp_channel, G, eps = 1e-5):
+        shape_x = tf.shape(x) # N, H, W, C
+        gamma = tf.get_variable(name = name + "_gamma", shape = [1, 1, 1, inp_channel])
+        beta = tf.get_variable(name = name + "_beta", shape = [1, 1, 1, inp_channel])
+        x_grouped = tf.reshape(x, [shape_x[0], shape_x[1], shape_x[2], G, shape_x[3] // G])
+
+        mean, var = tf.nn.moments(x_grouped, axes = [1, 2, 4], keep_dims = True)
+        x_norm = (x_grouped - mean) / tf.sqrt(var + eps)
+
+        x_norm_reshaped = tf.reshape(x_norm, [shape_x[0], shape_x[1], shape_x[2], shape_x[3]])
+
+        return x_norm_reshaped * gamma + beta
+
 
 
 
@@ -320,7 +364,15 @@ class SENet:
         return tf.constant(pad_matrix)
 
 
+    def save_weights(self, weight_save_path):
+        saver = tf.train.Saver()
+        saver.save(sess = self._sess, save_path = weight_save_path)
+        print("Weight saved successfully")
+
+
 
 
     def evaluate (self, X, y):
         self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, 1, 16)
+
+
