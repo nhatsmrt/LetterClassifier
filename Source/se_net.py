@@ -214,7 +214,7 @@ class SENet:
 
 
     def residual_module(self, x, name, inp_channel):
-        conv1 = self.convolutional_layer(x, name + "_conv1", inp_channel, inp_channel)
+        conv1 = self.convolutional_layer(x, name + "_conv1", inp_channel, inp_channel, not_activated = True)
         batch_norm_1 = tf.layers.batch_normalization(conv1, training = self._is_training)
         z_1 = tf.nn.relu(batch_norm_1)
         conv2 = self.convolutional_layer(z_1, name + "_conv2", inp_channel, inp_channel, not_activated = True)
@@ -225,7 +225,7 @@ class SENet:
         return res_layer
 
     def residual_module_with_se(self, x, name, inp_channel):
-        conv1 = self.convolutional_layer(x, name + "_conv1", inp_channel, inp_channel)
+        conv1 = self.convolutional_layer(x, name + "_conv1", inp_channel, inp_channel, not_activated = True)
         batch_norm_1 = tf.layers.batch_normalization(conv1, training = self._is_training)
         z_1 = tf.nn.relu(batch_norm_1)
         conv2 = self.convolutional_layer(z_1, name + "_conv2", inp_channel, inp_channel, not_activated = True)
