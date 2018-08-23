@@ -270,7 +270,7 @@ class SimpleConvnet:
 
 
     # Train:
-    def fit(self, X, y, num_epoch = 64, batch_size = 16, weight_save_path = None, weight_load_path = None, plot_losses = False):
+    def fit(self, X, y, num_epoch = 64, batch_size = 16, weight_save_path = None, weight_load_path = None, plot_losses = False, patience = None):
         self._y = tf.placeholder(tf.float32, shape = [None, self._n_classes])
         self._mean_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits = self._op, labels = self._y))
         self._optimizer = tf.train.AdamOptimizer(1e-4)
@@ -286,7 +286,7 @@ class SimpleConvnet:
             self._sess.run(tf.global_variables_initializer())
         if num_epoch > 0:
             print('Training Characters Classifier for ' + str(num_epoch) +  ' epochs')
-            self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, num_epoch, batch_size, 1, self._train_step, weight_save_path = weight_save_path, plot_losses = plot_losses)
+            self.run_model(self._sess, self._op_prob, self._mean_loss, X, y, num_epoch, batch_size, 1, self._train_step, weight_save_path = weight_save_path, plot_losses = plot_losses, patience = patience)
 
 
 
